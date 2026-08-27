@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from openai import APITimeoutError, AuthenticationError
 from dotenv import load_dotenv
 
 from src.llm.schema import TriageRequest, TriageResponse, CategoryEnum, UrgencyEnum
@@ -25,9 +26,22 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def triage_endpoint(payload: TriageRequest):
     """
     Classifies an incoming customer support message.
-    Returns clean, validated JSON matching TriageResponse schema.
+    Supports Kill Switch (LLM_ENABLED=false), Stub Mode (LLM_STUB=1), and Production AI execution.
     """
-    # 1. STUB MODE CHECK: Bypasses LLM calls when LLM_STUB=1
+    # LINE 30: Force Python to re-read .env on every incoming request
+    load_dotenv(override=True)
+
+    # LINE 32: KILL SWITCH CHECK (LLM_ENABLED=false skips LLM calls entirely)
+    llm_enabled = os.environ.get("LLM_ENABLED", "true").lower()
+    if llm_enabled in ("false", "0", "no"):
+        return TriageResponse(
+            category=CategoryEnum.OTHER,
+            urgency=UrgencyEnum.LOW,
+            confidence=0.0,
+            reason="[KILL SWITCH] AI service is currently disabled. Deterministic fallback returned."
+        )
+
+    # STUB MODE CHECK
     if os.environ.get("LLM_STUB") == "1":
         return TriageResponse(
             category=CategoryEnum.BUG,
@@ -36,18 +50,29 @@ async def triage_endpoint(payload: TriageRequest):
             reason="[STUB] High urgency bug report detected."
         )
 
-    # 2. REAL AI CALL: Executes Parse -> Validate -> Repair -> Quarantine Pipeline
+    # PRODUCTION AI EXECUTION
     try:
         validated_data = process_triage_request(payload.text)
         return validated_data
     except QuarantineException as qe:
-        # Give up cleanly with HTTP 422 (Unprocessable Entity) when model output fails validation
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={
                 "detail": "Model failed to produce a valid schema-compliant response after repair retry.",
                 "quarantined_output": qe.raw_output
             }
+        )
+    except AuthenticationError:
+        # HTTP 401 Unauthorized when API Key is invalid
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": "Authentication failed: Invalid API Key. No retries performed."}
+        )
+    except APITimeoutError:
+        # HTTP 504 Gateway Timeout when model call exceeds 30.0s
+        return JSONResponse(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            content={"detail": "LLM request timed out after 30.0 seconds."}
         )
     except Exception as e:
         return JSONResponse(
