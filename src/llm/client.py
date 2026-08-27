@@ -21,6 +21,13 @@ class QuarantineException(Exception):
         super().__init__(message)
         self.raw_output = raw_output
 
+# ==========================================
+# TODO 2 — Versioned Prompt Loader & Text Cleaning
+# ==========================================
+# PSEUDOCODE:
+# 1. Read system prompt specification from prompts/job-v1.md.
+# 2. Helper to strip markdown code blocks (```json ... ```) and leading/trailing whitespace.
+# ==========================================
 def load_system_prompt() -> str:
     """Reads the versioned system prompt specification from disk."""
     if not os.path.exists(PROMPT_FILE):
@@ -29,12 +36,19 @@ def load_system_prompt() -> str:
         return f.read()
 
 def strip_markdown_fences(text: str) -> str:
-    """Strips ```json markdown code blocks and whitespace."""
+    """Strips ```json markdown code blocks and leading/trailing whitespace."""
     text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s*```$", "", text)
     return text.strip()
 
+# ==========================================
+# TODO 4 — Observability & Logging (Quarantine + Cost Log)
+# ==========================================
+# PSEUDOCODE:
+# 1. Log failed outputs after repair retry to logs/quarantine.jsonl.
+# 2. Log token usage, duration (ms), model name, and prompt version to logs/cost.jsonl.
+# ==========================================
 def log_quarantine(user_input: str, raw_output: str, error_msg: str):
     """Appends failed LLM attempts to logs/quarantine.jsonl."""
     os.makedirs("logs", exist_ok=True)
@@ -64,12 +78,15 @@ def log_cost(model: str, input_tokens: int, output_tokens: int, duration_ms: flo
     with open(COST_LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(cost_entry) + "\n")
 
+# ==========================================
+# TODO 4 — Resilient Execution (Timeouts & Selective Retries)
+# ==========================================
+# PSEUDOCODE:
+# 1. Execute call with 30.0s timeout.
+# 2. Fail Fast on HTTP 401 (Authentication), 403, or 400 (do not retry bad keys).
+# 3. Apply exponential backoff with jitter on 429 (rate limits) and 5xx errors.
+# ==========================================
 def execute_llm_call_with_retry(client: OpenAI, model_name: str, messages: list):
-    """
-    Executes LLM call with explicit timeout (30s) and exponential backoff retry.
-    Retries ONLY on 429 rate limits, 5xx server errors, or timeouts.
-    FAILS FAST on 401 (Authentication), 403, or 400 errors without retrying!
-    """
     max_retries = 2
     for attempt in range(max_retries + 1):
         try:
@@ -81,7 +98,7 @@ def execute_llm_call_with_retry(client: OpenAI, model_name: str, messages: list)
             return response
         except (AuthenticationError, APIStatusError) as e:
             status_code = getattr(e, "status_code", None)
-            # FAIL FAST: Never retry 401, 403, or 400 errors!
+            # FIX / FAIL-FAST: Never retry 401, 403, or 400 errors!
             if status_code in (401, 403, 400):
                 print(f"🛑 Fail-Fast triggered for HTTP {status_code}: No retries performed.")
                 raise e
@@ -100,13 +117,17 @@ def execute_llm_call_with_retry(client: OpenAI, model_name: str, messages: list)
             else:
                 raise te
 
+# ==========================================
+# TODO 3 — Parse, Validate, Repair & Quarantine Pipeline
+# ==========================================
+# PSEUDOCODE:
+# 1. Attempt 1: Call LLM, strip markdown code fences, validate against Pydantic schema.
+# 2. If valid: Log usage & return TriageResponse.
+# 3. If validation fails: Trigger Repair Retry (Max 1 attempt). Send exact Pydantic error details back to LLM.
+# 4. Attempt 2: Strip fences & validate.
+# 5. If repair fails again: Log to logs/quarantine.jsonl & raise QuarantineException (triggers HTTP 422).
+# ==========================================
 def process_triage_request(user_input: str) -> TriageResponse:
-    """
-    Production Pipeline:
-    Call (Timeout=30s, Retries=429/5xx only) -> Parse -> Validate -> Repair Once -> Log Cost -> Quarantine
-    """
-    # 1. Instantiate OpenAI client with explicit 30.0s timeout and max_retries=0
-    # (We handle custom retries explicitly above to enforce selective fail-fast on 401!)
     client = OpenAI(
         base_url=os.environ.get("LLM_BASE_URL"),
         api_key=os.environ.get("LLM_API_KEY"),
@@ -126,7 +147,7 @@ def process_triage_request(user_input: str) -> TriageResponse:
     output_tokens = 0
     was_repaired = False
 
-    # --- ATTEMPT 1: Initial Call ---
+    # --- ATTEMPT 1: Initial Model Call ---
     res1 = execute_llm_call_with_retry(client, model_name, messages)
     raw_output1 = res1.choices[0].message.content
     cleaned_output1 = strip_markdown_fences(raw_output1)
@@ -144,9 +165,9 @@ def process_triage_request(user_input: str) -> TriageResponse:
     except (ValidationError, Exception) as err1:
         error_details = str(err1)
         was_repaired = True
-        print(f"⚠️ Validation Failed: {error_details}. Initiating Repair Retry...")
+        print(f"⚠️ Attempt 1 Validation Failed: {error_details}. Initiating Repair Retry...")
 
-    # --- ATTEMPT 2: Repair Retry ---
+    # --- ATTEMPT 2: Repair Retry (Exactly One Attempt) ---
     messages.append({"role": "assistant", "content": raw_output1})
     messages.append({
         "role": "user", 

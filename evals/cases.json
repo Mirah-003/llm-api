@@ -1,0 +1,50 @@
+[
+  {
+    "id": 1,
+    "text": "I was double charged $49 on my invoice for July.",
+    "expected_category": "billing",
+    "expected_urgency": "high"
+  },
+  {
+    "id": 2,
+    "text": "Can I get a refund for my auto-renewed annual subscription?",
+    "expected_category": "billing",
+    "expected_urgency": "normal"
+  },
+  {
+    "id": 3,
+    "text": "The login submit button crashes the web app on Firefox.",
+    "expected_category": "bug",
+    "expected_urgency": "normal"
+  },
+  {
+    "id": 4,
+    "text": "URGENT: Database connection is dropping all requests on production!",
+    "expected_category": "bug",
+    "expected_urgency": "high"
+  },
+  {
+    "id": 5,
+    "text": "It would be amazing if you added a Dark Mode toggle to the dashboard.",
+    "expected_category": "feature",
+    "expected_urgency": "low"
+  },
+  {
+    "id": 6,
+    "text": "Please support exporting analytics data to CSV and PDF format.",
+    "expected_category": "feature",
+    "expected_urgency": "low"
+  },
+  {
+    "id": 7,
+    "text": "What is the capital of France and your favorite movie?",
+    "expected_category": "other",
+    "expected_urgency": "low"
+  },
+  {
+    "id": 8,
+    "text": "asdfjkl; 12345 random unreadable text input",
+    "expected_category": "other",
+    "expected_urgency": "low"
+  }
+]

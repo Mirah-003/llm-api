@@ -1,7 +1,15 @@
 from enum import Enum
 from pydantic import BaseModel, Field
 
-# Enums define strict closed lists for classification categories
+# ==========================================
+# TODO 1 — Output & Input Schema Definitions
+# ==========================================
+# PSEUDOCODE / CONTRACT:
+# 1. Define closed Enums for category and urgency to prevent arbitrary free-text values.
+# 2. Define TriageRequest schema to validate incoming input text (min 1 char, max 2000).
+# 3. Define TriageResponse schema to validate outgoing LLM decisions.
+# ==========================================
+
 class CategoryEnum(str, Enum):
     BILLING = "billing"
     BUG = "bug"
@@ -13,7 +21,6 @@ class UrgencyEnum(str, Enum):
     NORMAL = "normal"
     HIGH = "high"
 
-# Request Schema: Validates incoming request payload
 class TriageRequest(BaseModel):
     text: str = Field(
         ..., 
@@ -22,7 +29,6 @@ class TriageRequest(BaseModel):
         description="The customer support message to triage"
     )
 
-# Response Schema: Validates outgoing LLM decision payload
 class TriageResponse(BaseModel):
     category: CategoryEnum
     urgency: UrgencyEnum

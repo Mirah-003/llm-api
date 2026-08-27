@@ -11,7 +11,13 @@ from src.llm.client import process_triage_request, QuarantineException
 load_dotenv(override=True)
 app = FastAPI(title="LLM Triage API")
 
-# Custom Exception Handler: Overrides default 422 to return HTTP 400 when user input is invalid
+# ==========================================
+# TODO 0 — Custom Exception Handler for Input Validation
+# ==========================================
+# PSEUDOCODE / FIX:
+# 1. Override default FastAPI 422 for input validation errors to return HTTP 400.
+# 2. Name offending field explicitly in error JSON response as required by specification.
+# ==========================================
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = exc.errors()
@@ -22,16 +28,29 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": f"Validation error on field '{field_name}': {msg}"}
     )
 
+# ==========================================
+# TODO 1 to 4 — Main Triage Endpoint Handler (POST /triage)
+# ==========================================
+# PSEUDOCODE:
+# 1. Force reload .env dynamically on every incoming request.
+# 2. Stage 4: Check Kill Switch (LLM_ENABLED=false) -> Return deterministic fallback.
+# 3. Stage 1: Check Stub Mode (LLM_STUB=1) -> Return hardcoded mock response.
+# 4. Stage 2/3/4: Call production pipeline in client.py.
+# 5. Handle Exceptions:
+#    - QuarantineException -> HTTP 422 Unprocessable Entity
+#    - AuthenticationError -> HTTP 401 Unauthorized (Fail Fast)
+#    - APITimeoutError -> HTTP 504 Gateway Timeout
+# ==========================================
 @app.post("/triage", response_model=TriageResponse)
 async def triage_endpoint(payload: TriageRequest):
     """
     Classifies an incoming customer support message.
     Supports Kill Switch (LLM_ENABLED=false), Stub Mode (LLM_STUB=1), and Production AI execution.
     """
-    # LINE 30: Force Python to re-read .env on every incoming request
+    # Dynamic reload fix: ensure .env changes take effect on immediate next request
     load_dotenv(override=True)
 
-    # LINE 32: KILL SWITCH CHECK (LLM_ENABLED=false skips LLM calls entirely)
+    # 1. KILL SWITCH CHECK
     llm_enabled = os.environ.get("LLM_ENABLED", "true").lower()
     if llm_enabled in ("false", "0", "no"):
         return TriageResponse(
@@ -41,7 +60,7 @@ async def triage_endpoint(payload: TriageRequest):
             reason="[KILL SWITCH] AI service is currently disabled. Deterministic fallback returned."
         )
 
-    # STUB MODE CHECK
+    # 2. STUB MODE CHECK
     if os.environ.get("LLM_STUB") == "1":
         return TriageResponse(
             category=CategoryEnum.BUG,
@@ -50,11 +69,12 @@ async def triage_endpoint(payload: TriageRequest):
             reason="[STUB] High urgency bug report detected."
         )
 
-    # PRODUCTION AI EXECUTION
+    # 3. PRODUCTION AI EXECUTION PIPELINE
     try:
         validated_data = process_triage_request(payload.text)
         return validated_data
     except QuarantineException as qe:
+        # Give up cleanly with HTTP 422 when model output fails validation
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={
@@ -63,7 +83,7 @@ async def triage_endpoint(payload: TriageRequest):
             }
         )
     except AuthenticationError:
-        # HTTP 401 Unauthorized when API Key is invalid
+        # HTTP 401 Unauthorized when API Key is invalid (Fail-Fast fix)
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"detail": "Authentication failed: Invalid API Key. No retries performed."}
