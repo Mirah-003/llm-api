@@ -2,49 +2,63 @@
 # FLYRANK AI — ASSIGNMENT BE-06: PUT AN LLM BEHIND YOUR API
 # ==========================================
 
-# ==========================================
-# TODO 1 — Pydantic Output Schema (src/llm/schema.py)
-# ==========================================
-# PSEUDOCODE:
-# Define your structured output shape.
-# - Create Enums for any closed lists (e.g., CategoryEnum).
-# - Create a Pydantic BaseModel (e.g., LLMResponse) containing the required fields.
-#
-# RESEARCH:
-# - Python Enum class.
-# - Pydantic BaseModel.
+# ------------------------------------------
+# 1. IMPORTS (Always at the very top!)
+# ------------------------------------------
+import os
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from dotenv import load_dotenv
+
+# Local application imports
+from src.llm.schema import TriageRequest, TriageResponse, CategoryEnum, UrgencyEnum
+
+
+# ------------------------------------------
+# 2. INITIALIZATION & CONFIGURATION
+# ------------------------------------------
+load_dotenv(override=True)
+app = FastAPI(title="LLM Triage API")
+
 
 # ==========================================
-# TODO 2 & 3 — The Call & Repair Loop (src/llm/client.py)
+# TODO 0 — Custom Exception Handlers
 # ==========================================
-# PSEUDOCODE:
-# Function: process_llm_request(user_input: str)
-# 
-# 1. Check Kill Switch:
-#    - If LLM_ENABLED == false, return a safe fallback or raise 503 Service Unavailable.
-#
-# 2. Check Stub Mode:
-#    - If LLM_STUB == 1, return a fake Pydantic object instantly.
-#
-# 3. Prepare the prompt:
-#    - Read prompt string from `prompts/<job>-v1.md`.
-#    - Setup messages array: [{"role": "system", "content": prompt}, {"role": "user", "content": user_input}]
-#
-# 4. First Attempt:
-#    - Call the LLM client (with strict timeout configured).
-#    - Extract the text content from the response.
-#    - Strip any markdown code fences (e.g., remove ```json and ```).
-#    - Try to parse and validate using LLMResponse.model_validate_json(text).
-#    - If successful, return the parsed object!
-#
-# 5. The Repair Retry (If First Attempt Failed Validation):
-#    - Catch the validation error.
-#    - Append the bad response to the messages array: {"role": "assistant", "content": bad_text}
-#    - Append the error to the messages array: {"role": "user", "content": f"Validation failed: {error}. Fix this and return ONLY valid JSON."}
-#    - Call the LLM client a second time.
-#    - Strip markdown fences and attempt validation again.
-#    
-# 6. Quarantine (If Second Attempt Fails):
-#    - If validation fails again, do NOT crash.
-#    - Log the raw input, raw output, and prompt version to a quarantine log (or print to stdout).
-#    - Raise an HTTPException(status_code=422) indicating the model failed to produce valid output.
+# - Override FastAPI default validation handler to return HTTP 400 instead of 422
+# ==========================================
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    field_name = errors[0]["loc"][-1] if errors else "body"
+    msg = errors[0]["msg"] if errors else "Invalid request body"
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"detail": f"Validation error on field '{field_name}': {msg}"}
+    )
+
+
+# ==========================================
+# TODO 1 — Route Handler & Stub Mode (POST /triage)
+# ==========================================
+
+@app.post("/triage", response_model=TriageResponse)
+async def triage_endpoint(payload: TriageRequest):
+    """
+    Classifies an incoming customer support message.
+    When LLM_STUB=1, returns a mock response without calling the model.
+    """
+    # 1. STUB MODE CHECK
+    if os.environ.get("LLM_STUB") == "1":
+        return TriageResponse(
+            category=CategoryEnum.BUG,
+            urgency=UrgencyEnum.HIGH,
+            confidence=0.95,
+            reason="[STUB] High urgency bug report detected."
+        )
+
+    # Real AI call will be connected here in Stage 3!
+    return JSONResponse(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED, 
+        content={"detail": "Real LLM calls not implemented yet. Set LLM_STUB=1 in .env to test stub mode."}
+    )
