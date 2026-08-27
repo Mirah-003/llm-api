@@ -1,7 +1,7 @@
 from enum import Enum
 from pydantic import BaseModel, Field
 
-# 1. Closed Lists (Enums) - The AI can ONLY pick values from these lists!
+# Enums define strict closed lists for classification categories
 class CategoryEnum(str, Enum):
     BILLING = "billing"
     BUG = "bug"
@@ -13,7 +13,7 @@ class UrgencyEnum(str, Enum):
     NORMAL = "normal"
     HIGH = "high"
 
-# 2. Input Schema (What the user sends to our API)
+# Request Schema: Validates incoming request payload
 class TriageRequest(BaseModel):
     text: str = Field(
         ..., 
@@ -22,7 +22,7 @@ class TriageRequest(BaseModel):
         description="The customer support message to triage"
     )
 
-# 3. Output Schema (What our API and the AI must return)
+# Response Schema: Validates outgoing LLM decision payload
 class TriageResponse(BaseModel):
     category: CategoryEnum
     urgency: UrgencyEnum
