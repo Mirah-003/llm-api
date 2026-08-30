@@ -2,6 +2,9 @@
 
 I built an automated support triage API endpoint that processes unstructured customer messages and returns schema-validated classification decisions. The system receives raw text and produces structured JSON containing a category, urgency level, confidence score, and a concise explanation.
 
+* **Live Production Base URL:** `https://llm-triage-api-hlk8.onrender.com`
+* **Interactive OpenAPI Docs:** `https://llm-triage-api-hlk8.onrender.com/docs`
+
 Rather than building a conversational chatbot, I designed this endpoint as a deterministic, single-decision step in a backend workflow. The integration includes input validation, prompt versioning, an in-memory SHA-256 cache, prompt injection defenses, a single-attempt repair loop, quarantine error logging, exponential backoff retries, and a kill-switch mechanism.
 
 ---
@@ -157,7 +160,11 @@ Sample log entry from `logs/cost.jsonl`:
 
 ## Deployment (Render Blueprint)
 
-This API includes an automated `render.yaml` Blueprint specification for 1-click deployment on [Render](https://render.com):
+This API is deployed live on Render:
+* **Live Service Base URL:** `https://llm-triage-api-hlk8.onrender.com`
+* **Interactive Swagger UI Docs:** `https://llm-triage-api-hlk8.onrender.com/docs`
+
+This repository includes an automated `render.yaml` Blueprint specification for 1-click deployment on [Render](https://render.com):
 
 1. Connect your GitHub repository (`Mirah-003/llm-api`) to Render.
 2. Select **New +** -> **Blueprint**.
