@@ -155,6 +155,18 @@ Sample log entry from `logs/cost.jsonl`:
 
 ---
 
+## Deployment (Render Blueprint)
+
+This API includes an automated `render.yaml` Blueprint specification for 1-click deployment on [Render](https://render.com):
+
+1. Connect your GitHub repository (`Mirah-003/llm-api`) to Render.
+2. Select **New +** -> **Blueprint**.
+3. Render will auto-detect `render.yaml`, configure the Web Service, and prompt you to input your `LLM_API_KEY`.
+4. Click **Apply** to deploy the live API endpoint.
+
+---
+
 ## What I Would Improve With Another Day
 
 Given an additional day, I would add a streaming token endpoint (`POST /triage/stream`) using Server-Sent Events (SSE) so users see classification reasons generated in real time, while utilizing a partial JSON parser to maintain schema validation. I would also grow the eval suite to 25 cases split into "easy" and "hard" tiers, and put the provider behind a `complete(prompt, input)` interface so swapping from OpenRouter to a direct OpenAI or Anthropic client requires zero route changes.
+
