@@ -13,6 +13,22 @@ from src.llm.cache import global_cache
 load_dotenv(override=True)
 app = FastAPI(title="LLM Triage API")
 
+@app.get("/")
+async def root_welcome():
+    """
+    Root Welcome Endpoint:
+    Provides API metadata and pointers to documentation & endpoints.
+    """
+    return {
+        "service": "LLM Support Triage API",
+        "status": "online",
+        "endpoints": {
+            "triage": "POST /triage",
+            "metrics": "GET /metrics",
+            "documentation": "GET /docs"
+        }
+    }
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = exc.errors()
