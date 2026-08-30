@@ -31,6 +31,8 @@ def load_system_prompt(prompt_version: str = "job-v1.md") -> str:
 
 def strip_markdown_fences(text: str) -> str:
     """Strips ```json markdown code blocks and whitespace."""
+    if not text:
+        return ""
     text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s*```$", "", text)

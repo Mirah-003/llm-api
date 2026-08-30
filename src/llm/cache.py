@@ -30,12 +30,12 @@ class ResponseCache:
         return None
 
     def set(self, prompt_version: str, user_input: str, response: TriageResponse):
-        # Prevent unbounded RAM growth by evicting oldest entry if full
-        if len(self._cache) >= self.max_size:
+        key = self._generate_key(prompt_version, user_input)
+        # Prevent unbounded RAM growth by evicting oldest entry if full and adding a new key
+        if key not in self._cache and len(self._cache) >= self.max_size:
             first_key = next(iter(self._cache))
             del self._cache[first_key]
             
-        key = self._generate_key(prompt_version, user_input)
         self._cache[key] = response
 
     def get_stats(self) -> dict:
