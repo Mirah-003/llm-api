@@ -10,25 +10,25 @@ Rather than building a conversational chatbot, I designed this endpoint as a det
 
 ```mermaid
 flowchart TD
-    A[Client Request] --> B[FastAPI Endpoint /triage]
-    B --> C{LLM_ENABLED?}
-    C -- False --> D[Deterministic Fallback HTTP 200]
-    C -- True --> E{LLM_STUB == 1?}
-    E -- True --> F[Hardcoded Mock Response]
-    E -- False --> G{In-Memory Cache Hit?}
-    G -- True (Hit) --> H[Return Cached Decision <1ms]
-    G -- False (Miss) --> I[Load Versioned Prompt prompts/job-v1.md or job-v2.md]
-    I --> J[OpenAI Client timeout=30.0s & response_format=json_object]
-    J --> K{HTTP Status Code}
-    K -- 401/403/400 --> L[Fail Fast Return Error]
-    K -- 429/5xx --> M[Exponential Backoff Retry]
-    K -- 200 OK --> N[Parse & Strip Fences]
-    N --> O{Pydantic Validation}
-    O -- Success --> P[Save to Cache & Log Usage & Return 200]
-    O -- Failure --> Q{Repair Attempted?}
-    Q -- No --> R[Repair Retry: Send Validation Error to LLM]
+    A["Client Request"] --> B["FastAPI Endpoint (/triage)"]
+    B --> C{"LLM_ENABLED?"}
+    C -- "False" --> D["Deterministic Fallback (HTTP 200)"]
+    C -- "True" --> E{"LLM_STUB == 1?"}
+    E -- "True" --> F["Hardcoded Mock Response"]
+    E -- "False" --> G{"In-Memory Cache Hit?"}
+    G -- "Hit" --> H["Return Cached Decision (Sub-millisecond)"]
+    G -- "Miss" --> I["Load Versioned Prompt"]
+    I --> J["OpenAI Client (Timeout 30s)"]
+    J --> K{"HTTP Status Code"}
+    K -- "401 / 403 / 400" --> L["Fail Fast (No Retries)"]
+    K -- "429 / 5xx" --> M["Exponential Backoff Retry"]
+    K -- "200 OK" --> N["Parse and Strip Markdown Fences"]
+    N --> O{"Pydantic Validation"}
+    O -- "Success" --> P["Save to Cache and Return HTTP 200"]
+    O -- "Failure" --> Q{"Repair Attempted?"}
+    Q -- "No" --> R["Repair Retry (Send Error to LLM)"]
     R --> N
-    Q -- Yes --> S[Log to logs/quarantine.jsonl & Return HTTP 422]
+    Q -- "Yes" --> S["Log Quarantine and Return HTTP 422"]
 ```
 
 ---
