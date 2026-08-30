@@ -21,6 +21,7 @@ def run_evaluation():
         case_id = case["id"]
         text = case["text"]
         expected_cat = case["expected_category"]
+        expected_urg = case.get("expected_urgency")
         
         try:
             response = requests.post(
@@ -33,13 +34,20 @@ def run_evaluation():
             if response.status_code == 200:
                 data = response.json()
                 actual_cat = data.get("category")
+                actual_urg = data.get("urgency")
                 
-                if actual_cat == expected_cat:
-                    print(f"  [Case {case_id}] ✅ PASS | Category: '{actual_cat}'")
+                cat_match = actual_cat == expected_cat
+                urg_match = (expected_urg is None) or (actual_urg == expected_urg)
+                
+                if cat_match and urg_match:
+                    print(f"  [Case {case_id}] ✅ PASS | Category: '{actual_cat}', Urgency: '{actual_urg}'")
                     passed += 1
-                else:
-                    print(f"  [Case {case_id}] ❌ FAIL | Expected: '{expected_cat}', Got: '{actual_cat}'")
+                elif not cat_match:
+                    print(f"  [Case {case_id}] ❌ FAIL | Category: expected '{expected_cat}', got '{actual_cat}'")
                     failed.append((case_id, text, expected_cat, actual_cat))
+                else:
+                    print(f"  [Case {case_id}] ❌ FAIL | Urgency: expected '{expected_urg}', got '{actual_urg}'")
+                    failed.append((case_id, text, f"urgency={expected_urg}", f"urgency={actual_urg}"))
             else:
                 print(f"  [Case {case_id}] ❌ ERROR | HTTP Status {response.status_code}")
                 failed.append((case_id, text, expected_cat, f"HTTP {response.status_code}"))

@@ -1,4 +1,5 @@
 import os
+import json
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -7,17 +8,11 @@ from dotenv import load_dotenv
 
 from src.llm.schema import TriageRequest, TriageResponse, CategoryEnum, UrgencyEnum
 from src.llm.client import process_triage_request, QuarantineException
+from src.llm.cache import global_cache
 
 load_dotenv(override=True)
 app = FastAPI(title="LLM Triage API")
 
-# ==========================================
-# TODO 0 — Custom Exception Handler for Input Validation
-# ==========================================
-# PSEUDOCODE / FIX:
-# 1. Override default FastAPI 422 for input validation errors to return HTTP 400.
-# 2. Name offending field explicitly in error JSON response as required by specification.
-# ==========================================
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = exc.errors()
@@ -28,26 +23,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": f"Validation error on field '{field_name}': {msg}"}
     )
 
-# ==========================================
-# TODO 1 to 4 — Main Triage Endpoint Handler (POST /triage)
-# ==========================================
-# PSEUDOCODE:
-# 1. Force reload .env dynamically on every incoming request.
-# 2. Stage 4: Check Kill Switch (LLM_ENABLED=false) -> Return deterministic fallback.
-# 3. Stage 1: Check Stub Mode (LLM_STUB=1) -> Return hardcoded mock response.
-# 4. Stage 2/3/4: Call production pipeline in client.py.
-# 5. Handle Exceptions:
-#    - QuarantineException -> HTTP 422 Unprocessable Entity
-#    - AuthenticationError -> HTTP 401 Unauthorized (Fail Fast)
-#    - APITimeoutError -> HTTP 504 Gateway Timeout
-# ==========================================
 @app.post("/triage", response_model=TriageResponse)
 async def triage_endpoint(payload: TriageRequest):
     """
     Classifies an incoming customer support message.
     Supports Kill Switch (LLM_ENABLED=false), Stub Mode (LLM_STUB=1), and Production AI execution.
     """
-    # Dynamic reload fix: ensure .env changes take effect on immediate next request
     load_dotenv(override=True)
 
     # 1. KILL SWITCH CHECK
@@ -74,7 +55,6 @@ async def triage_endpoint(payload: TriageRequest):
         validated_data = process_triage_request(payload.text)
         return validated_data
     except QuarantineException as qe:
-        # Give up cleanly with HTTP 422 when model output fails validation
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={
@@ -83,19 +63,62 @@ async def triage_endpoint(payload: TriageRequest):
             }
         )
     except AuthenticationError:
-        # HTTP 401 Unauthorized when API Key is invalid (Fail-Fast fix)
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"detail": "Authentication failed: Invalid API Key. No retries performed."}
         )
     except APITimeoutError:
-        # HTTP 504 Gateway Timeout when model call exceeds 30.0s
         return JSONResponse(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             content={"detail": "LLM request timed out after 30.0 seconds."}
         )
     except Exception as e:
+        # Log the full error server-side for debugging, but never expose internals to callers
+        print(f"🔥 Unhandled server error: {e}")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": f"Server Error: {str(e)}"}
+            content={"detail": "Internal server error. Check server logs for details."}
         )
+
+# ==========================================
+# BONUS EXTRA — GET /metrics Endpoint
+# ==========================================
+@app.get("/metrics")
+async def get_observability_metrics():
+    """
+    Observability Endpoint:
+    Parses logs/cost.jsonl and returns live aggregate system metrics.
+    """
+    cost_log_path = os.path.join("logs", "cost.jsonl")
+    total_calls = 0
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_duration_ms = 0.0
+    repair_count = 0
+
+    if os.path.exists(cost_log_path):
+        with open(cost_log_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                data = json.loads(line)
+                total_calls += 1
+                total_input_tokens += data.get("input_tokens", 0)
+                total_output_tokens += data.get("output_tokens", 0)
+                total_duration_ms += data.get("duration_ms", 0.0)
+                if data.get("was_repaired"):
+                    repair_count += 1
+
+    avg_latency_ms = round(total_duration_ms / total_calls, 2) if total_calls > 0 else 0.0
+
+    return {
+        "status": "healthy",
+        "cache_stats": global_cache.get_stats(),
+        "observability": {
+            "total_logged_calls": total_calls,
+            "total_input_tokens": total_input_tokens,
+            "total_output_tokens": total_output_tokens,
+            "avg_latency_ms": avg_latency_ms,
+            "repairs_triggered": repair_count
+        }
+    }
